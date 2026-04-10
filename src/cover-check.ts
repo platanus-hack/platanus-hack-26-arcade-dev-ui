@@ -1,8 +1,6 @@
-import { createHash } from 'crypto';
+import { execSync } from 'child_process';
 import { readFileSync } from 'fs';
 
-const DEFAULT_COVER_SHA256 =
-  'b97a843d173c8fe4bfccbb7645d54d174a19f69dcd02b10af3111df07744a642';
 const MAX_COVER_BYTES = 500 * 1024;
 
 export type CoverCheckResult = {
@@ -38,17 +36,55 @@ function checkPNGDimensions(buffer: Buffer): {
   };
 }
 
+function getOriginalCoverBlobHash(): string | null {
+  try {
+    // Find the first commit that introduced cover.png
+    const firstCommit = execSync(
+      'git log --diff-filter=A --format=%H -- cover.png | tail -1',
+      { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] },
+    ).trim();
+
+    if (!firstCommit) return null;
+
+    // Get the git blob hash of cover.png at that commit
+    return execSync(`git rev-parse "${firstCommit}:cover.png"`, {
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }).trim();
+  } catch {
+    return null;
+  }
+}
+
+function getCurrentCoverBlobHash(): string | null {
+  try {
+    // Hash the current working tree file using git's own hashing
+    return execSync('git hash-object cover.png', {
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }).trim();
+  } catch {
+    return null;
+  }
+}
+
 export function getCoverCheckResult(
   coverPath: string = './cover.png',
 ): CoverCheckResult {
   try {
     const coverBuffer = readFileSync(coverPath);
-    const coverHash = createHash('sha256').update(coverBuffer).digest('hex');
-    const isChanged = coverHash !== DEFAULT_COVER_SHA256;
     const sizeBytes = coverBuffer.byteLength;
     const { width, height, isPNG } = checkPNGDimensions(coverBuffer);
     const isValidSize = width === 800 && height === 600;
     const isValidFileSize = sizeBytes <= MAX_COVER_BYTES;
+
+    // Compare current file against the one from the first commit
+    const originalHash = getOriginalCoverBlobHash();
+    const currentHash = getCurrentCoverBlobHash();
+    const isChanged =
+      originalHash !== null &&
+      currentHash !== null &&
+      originalHash !== currentHash;
 
     let message = '';
     let isValid = false;
