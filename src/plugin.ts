@@ -21,7 +21,7 @@ import {
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_JSON_PATH = resolve(__dirname, '..', 'package.json');
 const DASHBOARD_HTML_PATH = resolve(__dirname, '..', 'dashboard.html');
-const PACKAGE_NAME = '@rafafdz/arcade-dev-ui-26';
+const PACKAGE_NAME = '@platanus/arcade-dev-ui-26';
 const REGISTRY_URL = `https://registry.npmjs.org/${PACKAGE_NAME}/latest`;
 const UPDATE_CHECK_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
