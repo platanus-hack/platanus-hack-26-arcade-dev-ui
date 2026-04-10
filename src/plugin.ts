@@ -87,6 +87,20 @@ export function arcadeDevUI(options: ArcadeDevUIOptions = {}) {
       // Load .env from the project root
       resolveEnv(server.config.root);
 
+      // Watch non-JS files so changes trigger a browser reload
+      const extraFiles = ['cover.png', 'metadata.json'];
+      for (const file of extraFiles) {
+        const abs = resolve(server.config.root, file);
+        server.watcher.add(abs);
+      }
+      server.watcher.on('change', (changedPath) => {
+        const base = changedPath.split('/').pop() ?? '';
+        if (extraFiles.includes(base)) {
+          console.log(`\n🔄 ${base} changed at`, new Date().toLocaleTimeString());
+          server.ws.send({ type: 'full-reload' });
+        }
+      });
+
       // Start update checks
       if (!options.disableUpdateCheck) {
         checkForUpdate();
