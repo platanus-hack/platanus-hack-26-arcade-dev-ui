@@ -404,6 +404,7 @@
 
     const RELEASE_STEP_LABELS = {
       idle: 'Ready',
+      updating_dev_ui: 'Updating Dev UI — reloading shortly…',
       validating: 'Validating local setup',
       git_add: 'Staging files',
       git_commit: 'Creating release commit',
@@ -1044,6 +1045,46 @@
         if (!reuseExistingPreview && !captureState.frames.length) {
           alert('Record a gameplay preview before submitting.');
           return;
+        }
+
+        // Force-check for dev UI updates before submitting
+        try {
+          const statusRes = await fetch(getStarterUrl('/api/dev-ui-status?force'));
+          if (statusRes.ok) {
+            const statusData = await statusRes.json();
+            if (statusData.updateAvailable) {
+              setSubmissionState({
+                status: 'updating_dev_ui',
+                isRunning: true,
+                error: null,
+                result: null,
+                uploadProgress: 0,
+                uploadWarning: null,
+              });
+              try {
+                const updateRes = await fetch(getStarterUrl('/api/dev-ui-update'), { method: 'POST' });
+                const updateData = await updateRes.json();
+                if (updateData.success) {
+                  setTimeout(() => window.location.reload(), 2000);
+                } else {
+                  setSubmissionState({
+                    status: 'failed',
+                    isRunning: false,
+                    error: 'Dev UI update failed: ' + (updateData.error || 'unknown error') + '. Please update manually and try again.',
+                    result: null,
+                    uploadProgress: 0,
+                    uploadWarning: null,
+                  });
+                }
+              } catch {
+                // Server likely restarted — reload
+                setTimeout(() => window.location.reload(), 1500);
+              }
+              return;
+            }
+          }
+        } catch {
+          // Network error checking for updates — proceed with submission
         }
 
         setSubmissionState({

@@ -270,7 +270,13 @@ export function arcadeDevUI(options: ArcadeDevUIOptions = {}) {
 
       server.middlewares.use(
         '/api/dev-ui-status',
-        (_req, res: ViteResponse) => {
+        async (req, res: ViteResponse) => {
+          // If ?force query param is present, refresh from registry first
+          const url = new URL(req.url ?? '', 'http://localhost');
+          if (url.searchParams.has('force')) {
+            await checkForUpdate();
+          }
+
           res.setHeader('Content-Type', 'application/json');
           res.end(
             JSON.stringify({
