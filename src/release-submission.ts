@@ -341,6 +341,63 @@ export async function submitArcadeRelease(
   }
 
   try {
+    runGitCommand(`git push origin ${gitInfo.branch}`);
+  } catch (error) {
+    return {
+      success: false,
+      error: 'Failed to push the commit to origin.',
+      step: 'git_push_branch',
+      details: error instanceof Error ? error.message : 'unknown',
+    };
+  }
+
+  const checkApiUrl = `${getReleaseApiUrl()}/check`;
+
+  try {
+    const checkResponse = await fetch(checkApiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        eventSlug,
+        githubUsername: gitInfo.githubUsername,
+        repoName: gitInfo.repoName,
+        commitSha,
+      }),
+    });
+
+    const checkResult = (await checkResponse.json()) as Record<string, unknown>;
+
+    if (!checkResponse.ok || checkResult.available === false) {
+      const conflicts = checkResult.conflicts as Record<string, string> | undefined;
+      const messages: string[] = [];
+
+      if (conflicts?.code) {
+        messages.push(conflicts.code);
+      }
+
+      if (conflicts?.slug) {
+        messages.push(conflicts.slug);
+      }
+
+      return {
+        success: false,
+        error: messages.length > 0
+          ? messages.join('. ')
+          : (typeof checkResult.error === 'string' ? checkResult.error : 'Pre-release check failed.'),
+        step: 'pre_release_check',
+        details: checkResult,
+      };
+    }
+  } catch (error) {
+    return {
+      success: false,
+      error: 'Failed to reach the pre-release check API.',
+      step: 'pre_release_check',
+      details: error instanceof Error ? error.message : 'unknown',
+    };
+  }
+
+  try {
     runGitCommand(`git tag ${tag}`);
   } catch (error) {
     return {
@@ -352,13 +409,12 @@ export async function submitArcadeRelease(
   }
 
   try {
-    runGitCommand(`git push origin ${gitInfo.branch}`);
     runGitCommand(`git push origin ${tag}`);
   } catch (error) {
     return {
       success: false,
-      error: 'Failed to push the commit and tag to origin.',
-      step: 'git_push',
+      error: 'Failed to push the release tag to origin.',
+      step: 'git_push_tag',
       details: error instanceof Error ? error.message : 'unknown',
     };
   }

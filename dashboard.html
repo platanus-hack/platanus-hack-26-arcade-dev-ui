@@ -409,8 +409,10 @@
       git_add: 'Staging files',
       git_commit: 'Creating release commit',
       resolve_commit: 'Resolving commit SHA',
+      git_push_branch: 'Pushing branch to GitHub',
+      pre_release_check: 'Checking for conflicts',
       git_tag: 'Creating git tag',
-      git_push: 'Pushing branch and tag',
+      git_push_tag: 'Pushing release tag',
       backend_request: 'Calling arcade release API',
       backend_response: 'Processing backend response',
       gameplay_zip: 'Packaging gameplay frames',
@@ -717,14 +719,24 @@
           description: 'Reads the new commit SHA before tagging the release.',
         },
         {
+          key: 'git_push_branch',
+          title: 'Push branch to GitHub',
+          description: 'Pushes the commit so the server can validate the code.',
+        },
+        {
+          key: 'pre_release_check',
+          title: 'Check for conflicts',
+          description: 'Verifies the game code is unique and the title/slug is available.',
+        },
+        {
           key: 'git_tag',
           title: 'Tag the release',
           description: 'Creates a unique arcade release tag from the new commit.',
         },
         {
-          key: 'git_push',
-          title: 'Push to GitHub',
-          description: 'Pushes the branch and the release tag to origin.',
+          key: 'git_push_tag',
+          title: 'Push tag to GitHub',
+          description: 'Pushes the release tag to origin.',
         },
         {
           key: 'backend_request',
@@ -743,8 +755,10 @@
         'git_add',
         'git_commit',
         'resolve_commit',
+        'git_push_branch',
+        'pre_release_check',
         'git_tag',
-        'git_push',
+        'git_push_tag',
         'backend_request',
       ];
       const gameplayStatusKeys = [
@@ -1570,43 +1584,57 @@
                   </p>
                 </div>
 
-                <div className="p-6">
-                  <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6 text-center">
-                    <div
-                      className="mx-auto h-14 w-14 animate-spin rounded-full border-4 border-white/10 border-t-transparent"
-                      style={{
-                        borderTopColor: HACK_PRIMARY_RGB,
-                        boxShadow: HACK_PRIMARY_SHADOW,
-                      }}
-                    />
-                    <div className="mt-5 text-xs uppercase tracking-[0.24em] text-white/45">
-                      Current Step
+                <div className="p-6 space-y-5">
+                  <div>
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-xs uppercase tracking-[0.22em] text-white/40">Progress</span>
+                      <span className="text-xs text-white/40">
+                        {currentStepIndex + 1} / {steps.length}
+                      </span>
                     </div>
-                    <div className="mt-2 text-xl font-medium text-white">
-                      {activeStep.title}
+                    <div className="h-2 w-full overflow-hidden rounded-full bg-white/[0.06]">
+                      <div
+                        className="h-full rounded-full transition-[width] duration-500 ease-out"
+                        style={{
+                          width: `${Math.round(((currentStepIndex + 0.5) / steps.length) * 100)}%`,
+                          backgroundColor: HACK_PRIMARY_RGB,
+                          boxShadow: `0 0 10px ${withHackPrimaryAlpha(0.45)}`,
+                        }}
+                      />
                     </div>
-                    <div className="mt-2 text-sm text-gray-400">
-                      {RELEASE_STEP_LABELS[submissionState.status] || activeStep.description}
-                    </div>
-                    {submissionState.status === 'gameplay_upload' ? (
-                      <div className="mt-5">
-                        <div className="h-2 w-full overflow-hidden rounded-full border border-white/10 bg-white/[0.04]">
-                          <div
-                            className="h-full transition-[width] duration-150 ease-out"
-                            style={{
-                              width: `${Math.round((submissionState.uploadProgress || 0) * 100)}%`,
-                              backgroundColor: HACK_PRIMARY_RGB,
-                            }}
-                          />
-                        </div>
-                        <div className="mt-2 text-xs uppercase tracking-[0.22em] text-white/45">
-                          {Math.round((submissionState.uploadProgress || 0) * 100)}%
-                        </div>
-                      </div>
-                    ) : null}
                   </div>
 
-                  <div className="mt-5 space-y-2">
+                  <div className="flex items-start gap-3">
+                    <div
+                      className="mt-0.5 h-4 w-4 flex-shrink-0 animate-spin rounded-full border-2 border-white/10"
+                      style={{ borderTopColor: HACK_PRIMARY_RGB }}
+                    />
+                    <div>
+                      <div className="text-base font-medium text-white">{activeStep.title}</div>
+                      <div className="mt-0.5 text-sm text-gray-400">
+                        {RELEASE_STEP_LABELS[submissionState.status] || activeStep.description}
+                      </div>
+                    </div>
+                  </div>
+
+                  {submissionState.status === 'gameplay_upload' ? (
+                    <div>
+                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/[0.06]">
+                        <div
+                          className="h-full rounded-full transition-[width] duration-150 ease-out"
+                          style={{
+                            width: `${Math.round((submissionState.uploadProgress || 0) * 100)}%`,
+                            backgroundColor: HACK_PRIMARY_RGB,
+                          }}
+                        />
+                      </div>
+                      <div className="mt-1.5 text-xs uppercase tracking-[0.22em] text-white/40">
+                        Uploading — {Math.round((submissionState.uploadProgress || 0) * 100)}%
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <div className="space-y-1.5 pt-1 border-t border-white/[0.06]">
                     {steps.map((step, index) => {
                       const isDone = index < currentStepIndex;
                       const isActive = index === currentStepIndex;
@@ -1614,29 +1642,19 @@
                       return (
                         <div
                           key={step.key}
-                          className={`rounded border p-3 text-sm ${
-                            isActive
-                              ? ''
+                          className="flex items-center gap-2.5 text-sm"
+                          style={{
+                            color: isActive
+                              ? HACK_PRIMARY_TEXT
                               : isDone
-                                ? ''
-                                : 'border-white/10 bg-white/[0.03]'
-                          }`}
-                          style={
-                            isActive || isDone
-                              ? {
-                                  borderColor: HACK_PRIMARY_BORDER,
-                                  backgroundColor: HACK_PRIMARY_BG,
-                                }
-                              : undefined
-                          }
+                                ? 'rgba(255,255,255,0.45)'
+                                : 'rgba(255,255,255,0.18)',
+                          }}
                         >
-                          <div className="flex items-center gap-2">
-                            <span>{isDone ? '✓' : isActive ? '⏳' : '•'}</span>
-                            <span className="font-medium text-white">{step.title}</span>
-                          </div>
-                          <div className="mt-1 ml-6 text-xs text-gray-400">
-                            {step.description}
-                          </div>
+                          <span className="w-3.5 flex-shrink-0 text-center text-xs">
+                            {isDone ? '✓' : isActive ? '›' : '·'}
+                          </span>
+                          <span>{step.title}</span>
                         </div>
                       );
                     })}
