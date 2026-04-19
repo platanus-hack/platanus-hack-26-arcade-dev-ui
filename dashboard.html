@@ -563,7 +563,7 @@
             body { overflow: hidden; background: #000; }
           </style>
           <script>
-            const forwardedKeys = new Set(['w', 'a', 's', 'd', 'u', 'i', 'o', 'j', 'k', 'l', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'ArrowDown', 'r', 't', 'y', 'f', 'g', 'h', 'Enter', '1', '2', '3']);
+            const forwardedKeys = new Set([' ', 'w', 'a', 's', 'd', 'u', 'i', 'o', 'j', 'k', 'l', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'ArrowDown', 'r', 't', 'y', 'f', 'g', 'h', 'Enter', '1', '2', '3']);
             const originalGetContext = HTMLCanvasElement.prototype.getContext;
 
             HTMLCanvasElement.prototype.getContext = function(type, attributes) {
@@ -629,6 +629,7 @@
       const [shareComposer, setShareComposer] = useState(null);
       const [shareNotice, setShareNotice] = useState(null);
       const [modalStep, setModalStep] = useState('review');
+      const [isRecordingTriggered, setIsRecordingTriggered] = useState(false);
       const [captureState, setCaptureState] = useState({
         status: 'idle',
         secondsLeft: SUBMISSION_CAPTURE_SECONDS,
@@ -925,11 +926,35 @@
 
       useEffect(() => {
         if (!isOpen || modalStep !== 'capture' || submissionState.isRunning) {
-          return undefined;
+          return;
         }
 
         let isCancelled = false;
         const timerIds = [];
+
+        if (!isRecordingTriggered) {
+          (async () => {
+            setCaptureState((curr) => ({ ...curr, status: 'loading' }));
+            try {
+              await loadGameIntoIframe(captureIframeRef.current);
+              if (isCancelled) return;
+              setCaptureState({
+                status: 'ready',
+                secondsLeft: SUBMISSION_CAPTURE_SECONDS,
+                frames: [],
+                error: null,
+              });
+            } catch (err) {
+              if (isCancelled) return;
+              setCaptureState((curr) => ({
+                ...curr,
+                status: 'error',
+                error: err instanceof Error ? err.message : 'Failed to load game.',
+              }));
+            }
+          })();
+          return;
+        }
 
         captureFrameIdsRef.current.forEach((id) => window.clearTimeout(id));
         captureFrameIdsRef.current = [];
@@ -942,7 +967,9 @@
 
         const startCapture = async () => {
           try {
-            await loadGameIntoIframe(captureIframeRef.current);
+            // No need to reload here as it was already loaded in the 'ready' phase
+            // or we might want to reload to ensure a fresh state? 
+            // Actually, the user wants to capture "the current state", so we DON'T reload here.
 
             if (isCancelled) {
               return;
@@ -1042,7 +1069,36 @@
           timerIds.forEach((id) => window.clearTimeout(id));
           captureFrameIdsRef.current = [];
         };
-      }, [isOpen, modalStep, submissionState.isRunning]);
+      }, [isOpen, modalStep, submissionState.isRunning, isRecordingTriggered]);
+
+      React.useEffect(() => {
+        const handleKeyDown = (e) => {
+          if (isOpen && modalStep === 'capture' && captureState.status === 'ready' && e.code === 'Space') {
+            e.preventDefault();
+            setIsRecordingTriggered(true);
+          }
+        };
+
+        const handleMessage = (e) => {
+          if (
+            isOpen &&
+            modalStep === 'capture' &&
+            captureState.status === 'ready' &&
+            e.data?.type === 'starter-key-state' &&
+            e.data?.key === ' ' &&
+            e.data?.pressed
+          ) {
+            setIsRecordingTriggered(true);
+          }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        window.addEventListener('message', handleMessage);
+        return () => {
+          window.removeEventListener('keydown', handleKeyDown);
+          window.removeEventListener('message', handleMessage);
+        };
+      }, [isOpen, modalStep, captureState.status]);
 
       if (!isOpen) return null;
 
@@ -1284,6 +1340,7 @@
 
       const handleRecordAgainFromCheck = () => {
         setReuseExisting(false);
+        setIsRecordingTriggered(false);
         setCaptureState({
           status: 'idle',
           secondsLeft: SUBMISSION_CAPTURE_SECONDS,
@@ -1298,6 +1355,7 @@
       };
 
       const handleRecordAgainFromConfirm = () => {
+        setIsRecordingTriggered(false);
         setCaptureState({
           status: 'idle',
           secondsLeft: SUBMISSION_CAPTURE_SECONDS,
@@ -1836,7 +1894,10 @@
                 <div className="p-6 pb-4 border-b border-white/10">
                   <div className="flex items-center justify-between gap-3">
                     <button
-                      onClick={() => setModalStep('review')}
+                      onClick={() => {
+                        setModalStep('review');
+                        setIsRecordingTriggered(false);
+                      }}
                       disabled={captureState.status === 'running' || captureState.status === 'loading'}
                       className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-4 py-2 text-[0.72rem] font-medium uppercase tracking-[0.18em] text-white/75 transition-colors hover:border-white/20 hover:bg-white/[0.06] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
                     >
@@ -1856,16 +1917,20 @@
                   <h2 className="mt-4 font-oxanium text-2xl text-white">
                     {captureState.status === 'running'
                       ? 'Recording…'
-                      : captureState.status === 'loading'
-                        ? 'Loading game…'
-                        : 'Play'}
+                      : captureState.status === 'ready'
+                        ? 'Ready to Record'
+                        : captureState.status === 'loading'
+                          ? 'Loading game…'
+                          : 'Play'}
                   </h2>
                   <p className="mt-2 text-sm text-gray-400">
                     {captureState.status === 'error'
                       ? 'No capture.'
                       : captureState.status === 'running'
                         ? 'Your gameplay is being recorded. Play as you would normally.'
-                        : `${SUBMISSION_CAPTURE_SECONDS} seconds.`}
+                        : captureState.status === 'ready'
+                          ? 'Play until you reach the moment you want to record, then press the button below.'
+                          : `${SUBMISSION_CAPTURE_SECONDS} seconds.`}
                   </p>
                 </div>
 
@@ -1915,6 +1980,21 @@
                 </div>
 
                 <div className="p-4 pt-0 flex flex-col gap-3">
+                  {captureState.status === 'ready' && (
+                    <button
+                      onClick={() => setIsRecordingTriggered(true)}
+                      className="group w-full py-4 rounded border transition-all uppercase tracking-[0.2em] text-sm font-bold flex items-center justify-center gap-3"
+                      style={{
+                        backgroundColor: HACK_PRIMARY_BG,
+                        color: HACK_PRIMARY_TEXT,
+                        borderColor: HACK_PRIMARY_BORDER,
+                        boxShadow: `0 0 20px ${withHackPrimaryAlpha(0.1)}`,
+                      }}
+                    >
+                      <span className="h-3 w-3 rounded-full animate-pulse" style={{ backgroundColor: HACK_PRIMARY_RGB }} />
+                      [ SPACE ] START 10s RECORDING
+                    </button>
+                  )}
                   <button
                     onClick={onClose}
                     disabled={captureState.status === 'running' || captureState.status === 'loading'}
