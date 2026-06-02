@@ -85,6 +85,9 @@ export type GameplayPreviewResponse = {
   posterUrl: string | null;
 };
 
+// Last-resort fallback only. The current edition is normally resolved live from
+// the challenge-info endpoint (see resolveCurrentEventSlug), so the dev UI tracks
+// whichever hackathon is active rather than a hardcoded city.
 const DEFAULT_EVENT_SLUG = '26-ar';
 const SUBMISSION_FILES = ['game.js', 'metadata.json', 'cover.png'] as const;
 
@@ -118,9 +121,23 @@ export function getArcadeSiteUrl() {
 }
 
 export function getArcadeChallengeInfoUrl() {
-  const url = new URL('/api/26/arcade/challenge-info', getHackSiteUrl());
-  url.searchParams.set('eventSlug', DEFAULT_EVENT_SLUG);
-  return url.toString();
+  // No eventSlug param: the endpoint returns the current/active challenge, so the
+  // dev UI follows whichever edition is live (CDMX now, the next stop later).
+  return new URL('/api/26/arcade/challenge-info', getHackSiteUrl()).toString();
+}
+
+// Resolve the slug of the currently active challenge from the endpoint, falling
+// back to DEFAULT_EVENT_SLUG only if the request fails.
+export async function resolveCurrentEventSlug(): Promise<string> {
+  try {
+    const info = await fetchArcadeChallengeInfo();
+    if (info?.challenge?.slug) {
+      return info.challenge.slug;
+    }
+  } catch {
+    // Network/endpoint failure — fall back to the default slug below.
+  }
+  return DEFAULT_EVENT_SLUG;
 }
 
 function parseGitHubRepo(remoteUrl: string) {
@@ -276,7 +293,7 @@ export async function submitArcadeRelease(
     };
   }
 
-  const eventSlug = payload.eventSlug?.trim() || DEFAULT_EVENT_SLUG;
+  const eventSlug = payload.eventSlug?.trim() || (await resolveCurrentEventSlug());
   let releaseState: ReturnType<typeof getCurrentReleaseState>;
 
   try {
